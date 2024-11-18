@@ -3,7 +3,7 @@
 # Project: Assignment 6 - Tarpaulin Course Management Tool
 # Due Date: December 6, 2024
 
-from flask import Flask, request, jsonify
+from flask import Flask, render_template, request, jsonify
 from google.cloud import datastore
 
 import requests
@@ -18,14 +18,20 @@ app.secret_key = 'SECRET_KEY'
 
 client = datastore.Client()
 
-LODGINGS = "lodgings"
+USERS_LOGIN = "users/login"
 
 # Update the values of the following 3 variables
-CLIENT_ID = 'Znq66uOUncmO72nU6QGlx0EXzprfO4H5'
-CLIENT_SECRET = 'NPpawtE4lBWXjEhSC-7m73djmHZmvDre50Aot0_ryWRL_9eX1GiYP9A7pHg8_KeC'
-DOMAIN = 'dev-hz50fh7yhc6mvqnl.us.auth0.com'
+CLIENT_ID = '3sZ0EYeu3CIq98xgY8WbetVlnUL4iAfk'
+CLIENT_SECRET = 'cq3KOI7tYkm25C3s6p3gLfobv6syXYoQqU7ZaeNLVETwjBjpO9HruLOrEDm02lCh'
+DOMAIN = 'dev-x1ennj17g3yv8mg0.us.auth0.com'
 
 ALGORITHMS = ["RS256"]
+
+# Error Codes
+ERROR_INVALID_REQUEST_BODY = {"Error" : "The request body is invalid"}
+ERROR_UNAUTHORIZED = {"Error" : "Unauthorized"}
+ERROR_PERMISSION = {"Error": "You don't have permission on this resource"}
+ERROR_NOT_FOUND = {"Error" : "Not found"}
 
 oauth = OAuth(app)
 
@@ -60,6 +66,7 @@ def verify_jwt(request):
     if 'Authorization' in request.headers:
         auth_header = request.headers['Authorization'].split()
         token = auth_header[1]
+        print("Token from verify_jwt: ", token)
     else:
         raise AuthError({"code": "no auth header",
                             "description":
@@ -121,7 +128,7 @@ def verify_jwt(request):
 
 @app.route('/')
 def index():
-    return "Please navigate to /lodgings to use this API"\
+    return render_template('index.html')
 
 # Create a lodging if the Authorization header contains a valid JWT
 @app.route('/lodgings', methods=['POST'])
@@ -148,11 +155,25 @@ def decode_jwt():
 # Request: JSON body with 2 properties with "username" and "password"
 #       of a user registered with this Auth0 domain
 # Response: JSON with the JWT as the value of the property id_token
-@app.route('/login', methods=['POST'])
+@app.route('/' + USERS_LOGIN, methods=['POST'])
 def login_user():
     content = request.get_json()
+
+    for i in ['username', 'password']:
+        if i not in content:
+            return ERROR_INVALID_REQUEST_BODY, 400
+
     username = content["username"]
+    for i in ['admin1@osu.com', 'instructor1@osu.com', 'instructor2@osu.com', 'student1@osu.com', 
+              'student2@osu.com', 'student3@osu.com', 'student4@osu.com', 'student5@osu.com', 
+              'student6@osu.com' ]:
+        if i not in username:
+            return ERROR_UNAUTHORIZED, 401
+        
     password = content["password"]
+    if password != 'Cheese1234!':
+        return ERROR_UNAUTHORIZED, 401
+    
     body = {'grant_type':'password','username':username,
             'password':password,
             'client_id':CLIENT_ID,
@@ -161,7 +182,13 @@ def login_user():
     headers = { 'content-type': 'application/json' }
     url = 'https://' + DOMAIN + '/oauth/token'
     r = requests.post(url, json=body, headers=headers)
-    return r.text, 200, {'Content-Type':'application/json'}
+    # print("Response: ", r.text)
+
+    response = r.json()
+
+    token = response['id_token']
+
+    return jsonify({"token": token})
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8080, debug=True)
