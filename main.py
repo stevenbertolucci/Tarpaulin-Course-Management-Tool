@@ -3,16 +3,19 @@
 # Project: Assignment 6 - Tarpaulin Course Management Tool
 # Due Date: December 6, 2024
 
-from flask import Flask, render_template, request, jsonify
-from google.cloud import datastore
+from flask import Flask, render_template, request, jsonify, send_file
+from google.cloud import datastore, storage
 from google.cloud.datastore.query import PropertyFilter
 
 import requests
 import json
+import io
 
 from six.moves.urllib.request import urlopen
 from jose import jwt
 from authlib.integrations.flask_client import OAuth
+
+AVATAR_BUCKET='project6-tarpaulin-avatars'
 
 app = Flask(__name__)
 app.secret_key = 'SECRET_KEY'
@@ -21,6 +24,7 @@ client = datastore.Client()
 
 USERS_LOGIN = "users/login"
 USERS = "users"
+AVATAR = "avatar"
 
 # Update the values of the following 3 variables
 CLIENT_ID = '3sZ0EYeu3CIq98xgY8WbetVlnUL4iAfk'
@@ -172,7 +176,6 @@ def get_a_user(id):
         try:
             payload = verify_jwt(request)
             # print("PAYLOAD: ", payload)
-            user_avatar = payload.get('avatar')
             user_id = payload.get('sub')
 
             # print("USER_ID: ", user_id)
@@ -184,6 +187,11 @@ def get_a_user(id):
             
             # print("RESULTS: ", results)
             # print("\n\n")
+
+            if results.get('avatar'):
+                avatar_url = f"{request.host_url}{USERS}/{id}/{AVATAR}"
+            else:
+                avatar_url = None
 
             ########################################
             #                                      #
@@ -198,13 +206,13 @@ def get_a_user(id):
                 query = query.add_filter(filter=PropertyFilter('sub', '=', user_id))
                 results = list(query.fetch())
 
-                if user_avatar:
+                if avatar_url:
                     for content in results:
                         user = {
                             'id': content.key.id,
                             'role': content['role'],
                             'sub': content['sub'],
-                            'avatar_url': f"{request.host_url}{USERS}/{id}/avatar"
+                            'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}"
                         } 
 
                     return jsonify(user)
@@ -241,13 +249,13 @@ def get_a_user(id):
                 query = query.add_filter(filter=PropertyFilter('sub', '=', user_id))
                 results = list(query.fetch())
 
-                if user_avatar:
+                if avatar_url:
                     for content in results:
                         user = {
                             'id': content.key.id,
                             'role': content['role'],
                             'sub': content['sub'],
-                            'avatar_url': f"{request.host_url}{USERS}/{id}/avatar",
+                            'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}",
                             'courses': []
                         }
 
@@ -289,14 +297,14 @@ def get_a_user(id):
 
                 #print("RESULTS: ", results)
 
-                if user_avatar:
+                if avatar_url:
                     for content in results:
                         user = {
                             'courses': [],
                             'id': content.key.id,
                             'role': content['role'],
                             'sub': content['sub'],
-                            'avatar_url': f"{request.host_url}{USERS}/{id}/avatar"
+                            'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}"
                         } 
 
                     return jsonify(user)
@@ -317,6 +325,139 @@ def get_a_user(id):
         except:
             #print("Uh-oh")
             return ERROR_UNAUTHORIZED, 401
+        
+# Create/update a user's avatar
+@app.route('/' + USERS + '/<int:id>' + '/' + AVATAR, methods=['POST'])
+def post_avatar(id):
+
+    # Check if there is an entry in request.files with the key 'file'
+    if 'file' not in request.files:
+        return ERROR_INVALID_REQUEST_BODY, 400
+
+    try:
+         # Verify JWT
+        payload = verify_jwt(request)
+        user_id = payload.get('sub')
+
+        # Checking for valid JWTs
+        key = client.key(USERS, id)
+        user = client.get(key)
+
+        # If not valid, return 403
+        if user['sub'] != user_id:
+            return ERROR_PERMISSION, 403
+        
+        # Set file_obj to the file sent in the request
+        file_obj = request.files['file']
+        
+        if 'tag' in request.form:
+            tag = request.form['tag']
+
+        # Create a storage client
+        storage_client = storage.Client()
+
+        # Get a handle on the bucket
+        bucket = storage_client.get_bucket(AVATAR_BUCKET)
+
+        # Create a blob object for the bucket with the name of the file
+        blob = bucket.blob(file_obj.filename)
+
+        # Position the file_obj to its beginning
+        file_obj.seek(0)
+
+        # Upload the file into Cloud Storage
+        blob.upload_from_file(file_obj)
+
+        # Update 'avatar_url' entity for the user
+        user['avatar_url'] = f"{request.host_url}{USERS}/{id}/{AVATAR}"
+        client.put(user) 
+
+        return jsonify({'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}"}), 200
+    
+    # Invalid JWT or missing JWT
+    except:
+        return ERROR_UNAUTHORIZED, 401
+    
+# Get a user's avatar
+@app.route('/' + USERS + '/<int:id>' + '/' + AVATAR, methods=['GET'])
+def get_avatar(id):
+
+    try:
+        # Verify JWT
+        payload = verify_jwt(request)
+        user_id = payload.get('sub')
+
+        # Checking for valid JWTs
+        key = client.key(USERS, id)
+        user = client.get(key)
+
+        # If not valid, return 403
+        if user['sub'] != user_id:
+            return ERROR_PERMISSION, 403
+        
+        # If user has no avatar, return 404
+        if user['avatar_url'] is None:
+            return ERROR_NOT_FOUND, 404
+        
+        # Set file_obj to the file sent in the request
+        file_obj = request.files['file']
+        
+        storage_client = storage.Client()
+        bucket = storage_client.get_bucket(AVATAR_BUCKET)
+
+        # Create a blob with the given file name
+        blob = bucket.blob(file_obj.filename)
+
+        # Create a file object in memory using Python io package
+        file_obj = io.BytesIO()
+
+        # Download the file from Cloud Storage to the file_obj variable
+        blob.download_to_file(file_obj)
+
+        # Position the file_obj to its beginning
+        file_obj.seek(0)
+
+        return send_file(file_obj, mimetype='image/x-png', download_name=file_obj.filename)
+    except:
+        return ERROR_UNAUTHORIZED, 401
+    
+# Delete a user's avatar
+@app.route('/' + {USERS} + '/<int:id>' + '/' + {AVATAR}, methods=['DELETE'])
+def delete_avatar(id):
+    
+    try:
+        # Verify JWT
+        payload = verify_jwt(request)
+        user_id = payload.get('sub')
+
+        # Checking for valid JWTs
+        key = client.key(USERS, id)
+        user = client.get(key)
+
+        # If not valid, return 403
+        if user['sub'] != user_id:
+            return ERROR_PERMISSION, 403
+        
+        # If user has no avatar, return 404
+        if user['avatar_url'] is None:
+            return ERROR_NOT_FOUND, 404
+        
+        # Set file_obj to the file sent in the request
+        file_obj = request.files['file']
+        
+        storage_client = storage.Client()
+
+        bucket = storage_client.get_bucket(AVATAR_BUCKET)
+
+        blob = bucket.blob(file_obj.filename)
+
+        # Delete the file from Cloud Storage
+        blob.delete()
+
+        return '', 204
+        
+    except:
+        return ERROR_UNAUTHORIZED, 401
 
 # Decode the JWT supplied in the Authorization header
 @app.route('/decode', methods=['GET'])

@@ -4,3 +4,4 @@ python-jose
 six
 requests
 authlib
+google-cloud-storage==2.18.2
