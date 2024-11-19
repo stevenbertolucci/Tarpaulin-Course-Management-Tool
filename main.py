@@ -39,6 +39,13 @@ ERROR_UNAUTHORIZED = {"Error" : "Unauthorized"}
 ERROR_PERMISSION = {"Error": "You don't have permission on this resource"}
 ERROR_NOT_FOUND = {"Error" : "Not found"}
 
+# Constants
+username_list = [
+    'admin1@osu.com', 'instructor1@osu.com', 'instructor2@osu.com',
+    'student1@osu.com', 'student2@osu.com', 'student3@osu.com',
+    'student4@osu.com', 'student5@osu.com', 'student6@osu.com'
+]
+
 oauth = OAuth(app)
 
 auth0 = oauth.register(
@@ -181,14 +188,10 @@ def get_a_user(id):
             # print("USER_ID: ", user_id)
             # print("\n\n")
 
-            query = client.query(kind=USERS)
-            query.order = ['role']
-            results = list(query.fetch())
-            
-            # print("RESULTS: ", results)
-            # print("\n\n")
+            key = client.key(USERS, id)
+            user = client.get(key)
 
-            if results.get('avatar'):
+            if 'avatar' in user:
                 avatar_url = f"{request.host_url}{USERS}/{id}/{AVATAR}"
             else:
                 avatar_url = None
@@ -198,30 +201,23 @@ def get_a_user(id):
             #          DISPLAYING AN ADMIN         #
             #                                      #
             ########################################
-            if results[0]['sub'] == user_id:
-
-                # print("ID: ", id)
-
-                query = client.query(kind=USERS)
-                query = query.add_filter(filter=PropertyFilter('sub', '=', user_id))
-                results = list(query.fetch())
+            if user['role'] == 'admin':
 
                 if avatar_url:
-                    for content in results:
-                        user = {
-                            'id': content.key.id,
-                            'role': content['role'],
-                            'sub': content['sub'],
+                    user = {
+                            'id': id,
+                            'role': user['role'],
+                            'sub': user['sub'],
                             'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}"
                         } 
 
                     return jsonify(user)
                 else:
-                    for content in results:
-                        user = {
-                            'id': content.key.id,
-                            'role': content['role'],
-                            'sub': content['sub']
+                    
+                    user = {
+                            'id': id,
+                            'role': user['role'],
+                            'sub': user['sub']
                         } 
 
                     return jsonify(user)
@@ -231,41 +227,34 @@ def get_a_user(id):
             #       DISPLAYING AN INSTRUCTOR       #
             #                                      #
             ########################################
-            elif results[1]['sub'] == user_id or results[2]['sub'] == user_id:
+            elif user['role'] == 'instructor':
 
                 #print("ID: ", id)
 
                 #print("I'm searching for instructor.")
                 
                 # Checking for valid JWTs
-                key = client.key(USERS, id)
-                instructor = client.get(key)
-
                 # If not valid, return 403
-                if instructor['sub'] != user_id:
+                if user['sub'] != user_id:
                     return ERROR_PERMISSION, 403
 
-                query = client.query(kind=USERS)
-                query = query.add_filter(filter=PropertyFilter('sub', '=', user_id))
-                results = list(query.fetch())
-
                 if avatar_url:
-                    for content in results:
-                        user = {
-                            'id': content.key.id,
-                            'role': content['role'],
-                            'sub': content['sub'],
+                    user = {
+                            'id': id,
+                            'role': user['role'],
+                            'sub': user['sub'],
                             'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}",
                             'courses': []
                         }
 
                     return jsonify(user)
+
                 else:
-                    for content in results:
-                        user = {
-                            'id': content.key.id,
-                            'role': content['role'],
-                            'sub': content['sub'],
+                    
+                    user = {
+                            'id': id,
+                            'role': user['role'],
+                            'sub': user['sub'],
                             'courses': []
                         } 
 
@@ -276,45 +265,34 @@ def get_a_user(id):
             #         DISPLAYING A STUDENT         #
             #                                      #
             ########################################
-            elif results[3]['sub'] == user_id or results[4]['sub'] == user_id or results[5]['sub'] == user_id \
-                or results[6]['sub'] == user_id or results[7]['sub'] == user_id or results[8]['sub'] == user_id:
+            elif user['role'] == 'student':
 
                 #print("ID: ", id)
 
                 #print("Searching for student.")
 
                 # Checking for valid JWTs
-                key = client.key(USERS, id)
-                student = client.get(key)
-
                 # If not valid, return 403
-                if student['sub'] != user_id:
+                if user['sub'] != user_id:
                     return ERROR_PERMISSION, 403
 
-                query = client.query(kind=USERS)
-                query = query.add_filter(filter=PropertyFilter('sub', '=', user_id))
-                results = list(query.fetch())
-
-                #print("RESULTS: ", results)
-
                 if avatar_url:
-                    for content in results:
-                        user = {
+                    user = {
                             'courses': [],
-                            'id': content.key.id,
-                            'role': content['role'],
-                            'sub': content['sub'],
+                            'id': id,
+                            'role': user['role'],
+                            'sub': user['sub'],
                             'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}"
                         } 
 
                     return jsonify(user)
                 else:
-                    for content in results:
-                        user = {
+                    
+                    user = {
                             'courses': [],
-                            'id': content.key.id,
-                            'role': content['role'],
-                            'sub': content['sub'],
+                            'id': id,
+                            'role': user['role'],
+                            'sub': user['sub'],
                         } 
 
                     return jsonify(user)
@@ -422,7 +400,7 @@ def get_avatar(id):
         return ERROR_UNAUTHORIZED, 401
     
 # Delete a user's avatar
-@app.route('/' + {USERS} + '/<int:id>' + '/' + {AVATAR}, methods=['DELETE'])
+@app.route('/' + USERS + '/<int:id>' + '/' + AVATAR, methods=['DELETE'])
 def delete_avatar(id):
     
     try:
@@ -478,14 +456,12 @@ def login_user():
         if i not in content:
             return ERROR_INVALID_REQUEST_BODY, 400
 
-    username = content["username"]
-    for i in ['admin1@osu.com', 'instructor1@osu.com', 'instructor2@osu.com', 'student1@osu.com', 
-              'student2@osu.com', 'student3@osu.com', 'student4@osu.com', 'student5@osu.com', 
-              'student6@osu.com' ]:
-        if i not in username:
-            return ERROR_UNAUTHORIZED, 401
+    username = content['username']
+
+    if username not in username_list:
+        return ERROR_UNAUTHORIZED, 401
         
-    password = content["password"]
+    password = content['password']
     if password != 'Cheese1234!':
         return ERROR_UNAUTHORIZED, 401
     
@@ -494,13 +470,13 @@ def login_user():
             'client_id':CLIENT_ID,
             'client_secret':CLIENT_SECRET
            }
+
     headers = { 'content-type': 'application/json' }
     url = 'https://' + DOMAIN + '/oauth/token'
     r = requests.post(url, json=body, headers=headers)
     # print("Response: ", r.text)
 
     response = r.json()
-
     token = response['id_token']
 
     return jsonify({"token": token})
