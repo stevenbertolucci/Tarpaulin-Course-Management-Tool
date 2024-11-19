@@ -5,6 +5,7 @@
 
 from flask import Flask, render_template, request, jsonify
 from google.cloud import datastore
+from google.cloud.datastore.query import PropertyFilter
 
 import requests
 import json
@@ -19,6 +20,7 @@ app.secret_key = 'SECRET_KEY'
 client = datastore.Client()
 
 USERS_LOGIN = "users/login"
+USERS = "users"
 
 # Update the values of the following 3 variables
 CLIENT_ID = '3sZ0EYeu3CIq98xgY8WbetVlnUL4iAfk'
@@ -66,7 +68,7 @@ def verify_jwt(request):
     if 'Authorization' in request.headers:
         auth_header = request.headers['Authorization'].split()
         token = auth_header[1]
-        print("Token from verify_jwt: ", token)
+        # print("Token from verify_jwt: ", token)
     else:
         raise AuthError({"code": "no auth header",
                             "description":
@@ -130,19 +132,191 @@ def verify_jwt(request):
 def index():
     return render_template('index.html')
 
-# Create a lodging if the Authorization header contains a valid JWT
-@app.route('/lodgings', methods=['POST'])
-def lodgings_post():
-    if request.method == 'POST':
-        payload = verify_jwt(request)
-        content = request.get_json()
-        new_lodging = datastore.entity.Entity(key=client.key(LODGINGS))
-        new_lodging.update({"name": content["name"], "description": content["description"],
-          "price": content["price"]})
-        client.put(new_lodging)
-        return jsonify(id=new_lodging.key.id)
-    else:
-        return jsonify(error='Method not recogonized')
+# Get all users if the Authorization header contains a valid JWT
+@app.route('/' + USERS, methods=['GET'])
+def get_users():
+    if request.method == 'GET':
+        try:
+            payload = verify_jwt(request)
+
+            user_id = payload.get('sub')
+
+            query = client.query(kind=USERS)
+            query.order = ['role']
+            results = list(query.fetch())
+
+            # Verify that the admin only gets to view the users
+            if results[0]['sub'] != user_id:
+                return ERROR_PERMISSION, 403
+
+            users = []
+
+            for content in results:
+                user = {
+                    'id': content.key.id,
+                    'role': content['role'],
+                    'sub': content['sub']
+                } 
+
+                users.append(user)
+
+            return jsonify(users)
+        
+        except:
+            return ERROR_UNAUTHORIZED, 401
+
+# Get a user
+@app.route('/' + USERS + '/<int:id>', methods=['GET'])
+def get_a_user(id):
+    if request.method == 'GET':
+        try:
+            payload = verify_jwt(request)
+            # print("PAYLOAD: ", payload)
+            user_avatar = payload.get('avatar')
+            user_id = payload.get('sub')
+
+            # print("USER_ID: ", user_id)
+            # print("\n\n")
+
+            query = client.query(kind=USERS)
+            query.order = ['role']
+            results = list(query.fetch())
+            
+            # print("RESULTS: ", results)
+            # print("\n\n")
+
+            ########################################
+            #                                      #
+            #          DISPLAYING AN ADMIN         #
+            #                                      #
+            ########################################
+            if results[0]['sub'] == user_id:
+
+                # print("ID: ", id)
+
+                query = client.query(kind=USERS)
+                query = query.add_filter(filter=PropertyFilter('sub', '=', user_id))
+                results = list(query.fetch())
+
+                if user_avatar:
+                    for content in results:
+                        user = {
+                            'id': content.key.id,
+                            'role': content['role'],
+                            'sub': content['sub'],
+                            'avatar_url': f"{request.host_url}{USERS}/{id}/avatar"
+                        } 
+
+                    return jsonify(user)
+                else:
+                    for content in results:
+                        user = {
+                            'id': content.key.id,
+                            'role': content['role'],
+                            'sub': content['sub']
+                        } 
+
+                    return jsonify(user)
+
+            ########################################
+            #                                      #
+            #       DISPLAYING AN INSTRUCTOR       #
+            #                                      #
+            ########################################
+            elif results[1]['sub'] == user_id or results[2]['sub'] == user_id:
+
+                #print("ID: ", id)
+
+                #print("I'm searching for instructor.")
+                
+                # Checking for valid JWTs
+                key = client.key(USERS, id)
+                instructor = client.get(key)
+
+                # If not valid, return 403
+                if instructor['sub'] != user_id:
+                    return ERROR_PERMISSION, 403
+
+                query = client.query(kind=USERS)
+                query = query.add_filter(filter=PropertyFilter('sub', '=', user_id))
+                results = list(query.fetch())
+
+                if user_avatar:
+                    for content in results:
+                        user = {
+                            'id': content.key.id,
+                            'role': content['role'],
+                            'sub': content['sub'],
+                            'avatar_url': f"{request.host_url}{USERS}/{id}/avatar",
+                            'courses': []
+                        }
+
+                    return jsonify(user)
+                else:
+                    for content in results:
+                        user = {
+                            'id': content.key.id,
+                            'role': content['role'],
+                            'sub': content['sub'],
+                            'courses': []
+                        } 
+
+                    return jsonify(user)
+
+            ########################################
+            #                                      #
+            #         DISPLAYING A STUDENT         #
+            #                                      #
+            ########################################
+            elif results[3]['sub'] == user_id or results[4]['sub'] == user_id or results[5]['sub'] == user_id \
+                or results[6]['sub'] == user_id or results[7]['sub'] == user_id or results[8]['sub'] == user_id:
+
+                #print("ID: ", id)
+
+                #print("Searching for student.")
+
+                # Checking for valid JWTs
+                key = client.key(USERS, id)
+                student = client.get(key)
+
+                # If not valid, return 403
+                if student['sub'] != user_id:
+                    return ERROR_PERMISSION, 403
+
+                query = client.query(kind=USERS)
+                query = query.add_filter(filter=PropertyFilter('sub', '=', user_id))
+                results = list(query.fetch())
+
+                #print("RESULTS: ", results)
+
+                if user_avatar:
+                    for content in results:
+                        user = {
+                            'courses': [],
+                            'id': content.key.id,
+                            'role': content['role'],
+                            'sub': content['sub'],
+                            'avatar_url': f"{request.host_url}{USERS}/{id}/avatar"
+                        } 
+
+                    return jsonify(user)
+                else:
+                    for content in results:
+                        user = {
+                            'courses': [],
+                            'id': content.key.id,
+                            'role': content['role'],
+                            'sub': content['sub'],
+                        } 
+
+                    return jsonify(user)
+
+            else:
+                return ERROR_PERMISSION, 403
+
+        except:
+            #print("Uh-oh")
+            return ERROR_UNAUTHORIZED, 401
 
 # Decode the JWT supplied in the Authorization header
 @app.route('/decode', methods=['GET'])
