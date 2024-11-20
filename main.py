@@ -22,6 +22,7 @@ app.secret_key = 'SECRET_KEY'
 
 client = datastore.Client()
 
+# Endpoints/kinds
 USERS_LOGIN = "users/login"
 USERS = "users"
 AVATAR = "avatar"
