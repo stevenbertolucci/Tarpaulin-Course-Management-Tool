@@ -25,6 +25,7 @@ client = datastore.Client()
 USERS_LOGIN = "users/login"
 USERS = "users"
 AVATAR = "avatar"
+COURSES = "courses"
 
 # Update the values of the following 3 variables
 CLIENT_ID = '3sZ0EYeu3CIq98xgY8WbetVlnUL4iAfk'
@@ -438,6 +439,74 @@ def delete_avatar(id):
 
         return '', 204
         
+    except:
+        return ERROR_UNAUTHORIZED, 401
+
+# Create courses
+@app.route('/' + COURSES, methods=['POST'])
+def post_courses():
+    content = request.get_json()
+    print("Content: ", content)
+
+    try:
+        payload = verify_jwt(request)
+        print("Payload: ", payload)
+        user_id = payload.get('sub')
+
+        # If the request body do not contain any one of the required field, return 400
+        for i in ['subject', 'number', 'title', 'term', 'instructor_id']:
+            if i not in content:
+                return ERROR_INVALID_REQUEST_BODY, 400
+
+        # Check if it is admin adding the course
+        query = client.query(kind=USERS)
+        query.add_filter(filter=PropertyFilter('sub', '=', user_id))
+        results = list(query.fetch())
+        #print("RESULTS: ", results)
+
+        # Check if role is admin because only admin can create courses
+        if not results or results[0]['role'] != 'admin':
+            return ERROR_PERMISSION, 403
+        
+        # print("uh-oh")
+
+        # Check to see if the content of the request contains a valid instructor_id and that id matches the instructor
+        user = client.key(USERS, content['instructor_id'])
+        instructor = client.get(user)
+
+        # If no instructor is found, return 400
+        if instructor is not None and instructor['role'] != 'instructor':
+            return ERROR_INVALID_REQUEST_BODY, 400
+        
+        # print('Uh-oh')
+
+        # Create courses entity in datastore
+        new_course = datastore.Entity(key=client.key(COURSES))
+
+        new_course.update({
+            'subject': content['subject'],
+            'number': content['number'],
+            'title': content['title'],
+            'term': content['term'],
+            'instructor_id': content['instructor_id']
+        })
+
+        client.put(new_course)
+
+        course_id = new_course.key.id
+
+        self_link = f"{request.host_url}{COURSES}/{course_id}"
+
+        response = {
+            'id': course_id,
+            'subject': new_course['subject'],
+            'number': new_course['number'],
+            'title': new_course['title'],
+            'term': new_course['term'],
+            'instructor_id': new_course['instructor_id'],
+            'self': self_link,
+        }
+        return (response, 201)
     except:
         return ERROR_UNAUTHORIZED, 401
 
