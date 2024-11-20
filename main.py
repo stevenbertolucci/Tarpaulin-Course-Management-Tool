@@ -492,13 +492,12 @@ def post_courses():
         })
 
         client.put(new_course)
+        id = new_course.key.id
 
-        course_id = new_course.key.id
-
-        self_link = f"{request.host_url}{COURSES}/{course_id}"
+        self_link = f"{request.host_url}{COURSES}/{id}"
 
         response = {
-            'id': course_id,
+            'id': id,
             'subject': new_course['subject'],
             'number': new_course['number'],
             'title': new_course['title'],
@@ -509,6 +508,54 @@ def post_courses():
         return (response, 201)
     except:
         return ERROR_UNAUTHORIZED, 401
+
+# Get all courses
+@app.route('/' + COURSES, methods=['GET'])
+def get_courses():
+
+    # Set offset and limit parameters for first page
+    offset = int(request.args.get('offset', 0))
+    limit = 3
+
+    query = client.query(kind=COURSES)
+    query.order = ['subject']
+    results = list(query.fetch(offset=offset, limit=limit))
+
+    courses = []
+
+    for course in results:
+        courses.append({
+            "id": course.key.id,
+            'instructor_id': course['instructor_id'],
+            'number': course['number'],
+            'self': f"{request.host_url}{COURSES}/{course.key.id}",
+            'subject': course['subject'],
+            'term': course['term'],
+            'title': course['title']
+        })
+
+    next_offset = offset + limit
+    next_url = f"{request.host_url}{COURSES}?offset={next_offset}&limit={limit}" if courses else None
+
+    return {
+        "courses": courses,
+        "next": next_url
+    }
+
+# Get a course
+@app.route('/' + COURSES + '/<int:id>', methods=['GET'])
+def get_a_course(id):
+
+    course_key = client.key(COURSES, id)
+    course = client.get(key=course_key)
+
+    if course is None:
+        return ERROR_NOT_FOUND, 404
+    else:
+        course['id'] = course.key.id
+        course['self'] = f"{request.host_url}{COURSES}/{id}"
+
+    return course
 
 # Decode the JWT supplied in the Authorization header
 @app.route('/decode', methods=['GET'])
