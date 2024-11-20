@@ -139,10 +139,48 @@ def verify_jwt(request):
                             "description":
                                 "No RSA key in JWKS"}, 401)
 
-
+# Home page (aka Index)
 @app.route('/')
 def index():
     return render_template('index.html')
+
+# Generate a JWT from the Auth0 domain and return it
+# Request: JSON body with 2 properties with "username" and "password"
+#       of a user registered with this Auth0 domain
+# Response: JSON with the JWT as the value of the property id_token
+@app.route('/' + USERS_LOGIN, methods=['POST'])
+def login_user():
+    content = request.get_json()
+
+    for i in ['username', 'password']:
+        if i not in content:
+            return ERROR_INVALID_REQUEST_BODY, 400
+
+    username = content['username']
+
+    if username not in username_list:
+        return ERROR_UNAUTHORIZED, 401
+        
+    password = content['password']
+    
+    if password != 'Cheese1234!':
+        return ERROR_UNAUTHORIZED, 401
+    
+    body = {'grant_type':'password','username':username,
+            'password':password,
+            'client_id':CLIENT_ID,
+            'client_secret':CLIENT_SECRET
+           }
+
+    headers = { 'content-type': 'application/json' }
+    url = 'https://' + DOMAIN + '/oauth/token'
+    r = requests.post(url, json=body, headers=headers)
+    # print("Response: ", r.text)
+
+    response = r.json()
+    token = response['id_token']
+
+    return jsonify({"token": token})
 
 # Get all users if the Authorization header contains a valid JWT
 @app.route('/' + USERS, methods=['GET'])
@@ -305,303 +343,260 @@ def get_a_user(id):
             #print("Uh-oh")
             return ERROR_UNAUTHORIZED, 401
         
-# Create/update a user's avatar
-@app.route('/' + USERS + '/<int:id>' + '/' + AVATAR, methods=['POST'])
+# Create/update a user's avatar OR
+# GET a user's avatar OR
+# DELETE a user's avatar
+@app.route('/' + USERS + '/<int:id>' + '/' + AVATAR, methods=['POST', 'GET', 'DELETE'])
 def post_avatar(id):
+    if request.method == 'POST':
+        try:
+            # Verify JWT
+            payload = verify_jwt(request)
+            user_id = payload.get('sub')
 
-    try:
-         # Verify JWT
-        payload = verify_jwt(request)
-        user_id = payload.get('sub')
+            # Checking for valid JWTs
+            key = client.key(USERS, id)
+            user = client.get(key)
 
-        # Checking for valid JWTs
-        key = client.key(USERS, id)
-        user = client.get(key)
+            # If not valid, return 403
+            if user['sub'] != user_id:
+                return ERROR_PERMISSION, 403
 
-        # If not valid, return 403
-        if user['sub'] != user_id:
-            return ERROR_PERMISSION, 403
+            # Check if there is an entry in request.files with the key 'file'
+            if 'file' not in request.files:
+                print('Uh-oh')
+                return ERROR_INVALID_REQUEST_BODY, 400
+            
+            # Set file_obj to the file sent in the request
+            file_obj = request.files['file']
+            
+            if 'tag' in request.form:
+                tag = request.form['tag']
 
-        # Check if there is an entry in request.files with the key 'file'
-        if 'file' not in request.files:
-            print('Uh-oh')
-            return ERROR_INVALID_REQUEST_BODY, 400
+            # Create a storage client
+            storage_client = storage.Client()
+
+            # Get a handle on the bucket
+            bucket = storage_client.get_bucket(AVATAR_BUCKET)
+
+            # Create a blob object for the bucket with the name of the file
+            blob = bucket.blob(file_obj.filename)
+
+            # Position the file_obj to its beginning
+            file_obj.seek(0)
+
+            # Upload the file into Cloud Storage
+            blob.upload_from_file(file_obj)
+
+            # Update 'avatar_url' entity for the user
+            user['avatar_url'] = f"{request.host_url}{USERS}/{id}/{AVATAR}"
+            # Save the avatar_url in datastore
+            client.put(user) 
+
+            return jsonify({'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}"}), 200
         
-        # Set file_obj to the file sent in the request
-        file_obj = request.files['file']
-        
-        if 'tag' in request.form:
-            tag = request.form['tag']
+        # Invalid JWT or missing JWT
+        except:
+            return ERROR_UNAUTHORIZED, 401
 
-        # Create a storage client
-        storage_client = storage.Client()
+    if request.method == 'GET':
+        try:
+            # Verify JWT
+            payload = verify_jwt(request)
+            user_id = payload.get('sub')
+            # print("Request: ", request)
+            # print("Payload: ", payload)
 
-        # Get a handle on the bucket
-        bucket = storage_client.get_bucket(AVATAR_BUCKET)
+            # Checking for valid JWTs
+            key = client.key(USERS, id)
+            user = client.get(key)
 
-        # Create a blob object for the bucket with the name of the file
-        blob = bucket.blob(file_obj.filename)
+            # If not valid, return 403
+            if user['sub'] != user_id:
+                return ERROR_PERMISSION, 403
+            
+            # If user has no avatar, return 404
+            # Not all users have avatar_url in their property
+            # Hence the user.get() call
+            if user.get('avatar_url') is None:
+                return ERROR_NOT_FOUND, 404
+            
+            storage_client = storage.Client()
+            bucket = storage_client.get_bucket(AVATAR_BUCKET)
 
-        # Position the file_obj to its beginning
-        file_obj.seek(0)
+            # Create a blob with the given file name
+            blob = bucket.blob('student1.jpg')
 
-        # Upload the file into Cloud Storage
-        blob.upload_from_file(file_obj)
+            # Create a file object in memory using Python io package
+            file_obj = io.BytesIO()
 
-        # Update 'avatar_url' entity for the user
-        user['avatar_url'] = f"{request.host_url}{USERS}/{id}/{AVATAR}"
-        # Save the avatar_url in datastore
-        client.put(user) 
+            # Download the file from Cloud Storage to the file_obj variable
+            blob.download_to_file(file_obj)
 
-        return jsonify({'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}"}), 200
-    
-    # Invalid JWT or missing JWT
-    except:
-        return ERROR_UNAUTHORIZED, 401
-    
-# Get a user's avatar
-@app.route('/' + USERS + '/<int:id>' + '/' + AVATAR, methods=['GET'])
-def get_avatar(id):
+            # Position the file_obj to its beginning
+            file_obj.seek(0)
 
-    try:
-        # Verify JWT
-        payload = verify_jwt(request)
-        user_id = payload.get('sub')
-        # print("Request: ", request)
-        # print("Payload: ", payload)
+            return send_file(file_obj, mimetype='image/x-png', download_name='student1.jpg')
+        except:
+            return ERROR_UNAUTHORIZED, 401
 
-        # Checking for valid JWTs
-        key = client.key(USERS, id)
-        user = client.get(key)
+    if request.method == 'DELETE':
+        try:
+            # Verify JWT
+            payload = verify_jwt(request)
+            user_id = payload.get('sub')
 
-        # If not valid, return 403
-        if user['sub'] != user_id:
-            return ERROR_PERMISSION, 403
-        
-        # If user has no avatar, return 404
-        # Not all users have avatar_url in their property
-        # Hence the user.get() call
-        if user.get('avatar_url') is None:
-            return ERROR_NOT_FOUND, 404
-        
-        storage_client = storage.Client()
-        bucket = storage_client.get_bucket(AVATAR_BUCKET)
+            # Checking for valid JWTs
+            key = client.key(USERS, id)
+            user = client.get(key)
 
-        # Create a blob with the given file name
-        blob = bucket.blob('student1.jpg')
+            # If not valid, return 403
+            if user['sub'] != user_id:
+                return ERROR_PERMISSION, 403
+            
+            # If user has no avatar, return 404
+            if user.get('avatar_url') is None:
+                return ERROR_NOT_FOUND, 404
+            
+            storage_client = storage.Client()
 
-        # Create a file object in memory using Python io package
-        file_obj = io.BytesIO()
+            bucket = storage_client.get_bucket(AVATAR_BUCKET)
 
-        # Download the file from Cloud Storage to the file_obj variable
-        blob.download_to_file(file_obj)
+            blob = bucket.blob('student1.jpg')
 
-        # Position the file_obj to its beginning
-        file_obj.seek(0)
+            # Delete the file from Cloud Storage
+            blob.delete()
 
-        return send_file(file_obj, mimetype='image/x-png', download_name='student1.jpg')
-    except:
-        return ERROR_UNAUTHORIZED, 401
-    
-# Delete a user's avatar
-@app.route('/' + USERS + '/<int:id>' + '/' + AVATAR, methods=['DELETE'])
-def delete_avatar(id):
-    
-    try:
-        # Verify JWT
-        payload = verify_jwt(request)
-        user_id = payload.get('sub')
+            # Update the avatar_url for user
+            user['avatar_url'] = None
+            client.put(user)
 
-        # Checking for valid JWTs
-        key = client.key(USERS, id)
-        user = client.get(key)
+            return '', 204
+            
+        except:
+            return ERROR_UNAUTHORIZED, 401    
 
-        # If not valid, return 403
-        if user['sub'] != user_id:
-            return ERROR_PERMISSION, 403
-        
-        # If user has no avatar, return 404
-        if user.get('avatar_url') is None:
-            return ERROR_NOT_FOUND, 404
-        
-        storage_client = storage.Client()
-
-        bucket = storage_client.get_bucket(AVATAR_BUCKET)
-
-        blob = bucket.blob('student1.jpg')
-
-        # Delete the file from Cloud Storage
-        blob.delete()
-
-        # Update the avatar_url for user
-        user['avatar_url'] = None
-        client.put(user)
-
-        return '', 204
-        
-    except:
-        return ERROR_UNAUTHORIZED, 401
-
-# Create courses
-@app.route('/' + COURSES, methods=['POST'])
+# Create courses OR
+# Get all courses
+@app.route('/' + COURSES, methods=['POST', 'GET'])
 def post_courses():
     content = request.get_json()
     print("Content: ", content)
 
-    try:
-        payload = verify_jwt(request)
-        print("Payload: ", payload)
-        user_id = payload.get('sub')
+    if request.method == "POST":
 
-        # If the request body do not contain any one of the required field, return 400
-        for i in ['subject', 'number', 'title', 'term', 'instructor_id']:
-            if i not in content:
+        try:
+            payload = verify_jwt(request)
+            print("Payload: ", payload)
+            user_id = payload.get('sub')
+
+            # If the request body do not contain any one of the required field, return 400
+            for i in ['subject', 'number', 'title', 'term', 'instructor_id']:
+                if i not in content:
+                    return ERROR_INVALID_REQUEST_BODY, 400
+
+            # Check if it is admin adding the course
+            query = client.query(kind=USERS)
+            query.add_filter(filter=PropertyFilter('sub', '=', user_id))
+            results = list(query.fetch())
+            #print("RESULTS: ", results)
+
+            # Check if role is admin because only admin can create courses
+            if not results or results[0]['role'] != 'admin':
+                return ERROR_PERMISSION, 403
+            
+            # print("uh-oh")
+
+            # Check to see if the content of the request contains a valid instructor_id and that id matches the instructor
+            user = client.key(USERS, content['instructor_id'])
+            instructor = client.get(user)
+
+            # If no instructor is found, return 400
+            if instructor is not None and instructor['role'] != 'instructor':
                 return ERROR_INVALID_REQUEST_BODY, 400
+            
+            # print('Uh-oh')
 
-        # Check if it is admin adding the course
-        query = client.query(kind=USERS)
-        query.add_filter(filter=PropertyFilter('sub', '=', user_id))
-        results = list(query.fetch())
-        #print("RESULTS: ", results)
+            # Create courses entity in datastore
+            new_course = datastore.Entity(key=client.key(COURSES))
 
-        # Check if role is admin because only admin can create courses
-        if not results or results[0]['role'] != 'admin':
-            return ERROR_PERMISSION, 403
-        
-        # print("uh-oh")
+            new_course.update({
+                'subject': content['subject'],
+                'number': content['number'],
+                'title': content['title'],
+                'term': content['term'],
+                'instructor_id': content['instructor_id']
+            })
 
-        # Check to see if the content of the request contains a valid instructor_id and that id matches the instructor
-        user = client.key(USERS, content['instructor_id'])
-        instructor = client.get(user)
+            client.put(new_course)
+            id = new_course.key.id
 
-        # If no instructor is found, return 400
-        if instructor is not None and instructor['role'] != 'instructor':
-            return ERROR_INVALID_REQUEST_BODY, 400
-        
-        # print('Uh-oh')
+            self_link = f"{request.host_url}{COURSES}/{id}"
 
-        # Create courses entity in datastore
-        new_course = datastore.Entity(key=client.key(COURSES))
+            response = {
+                'id': id,
+                'subject': new_course['subject'],
+                'number': new_course['number'],
+                'title': new_course['title'],
+                'term': new_course['term'],
+                'instructor_id': new_course['instructor_id'],
+                'self': self_link,
+            }
+            return (response, 201)
+        except:
+            return ERROR_UNAUTHORIZED, 401
 
-        new_course.update({
-            'subject': content['subject'],
-            'number': content['number'],
-            'title': content['title'],
-            'term': content['term'],
-            'instructor_id': content['instructor_id']
-        })
+    if request.method == 'GET':
+        # Set offset and limit parameters for first page
+        offset = int(request.args.get('offset', 0))
+        limit = 3
 
-        client.put(new_course)
-        id = new_course.key.id
+        query = client.query(kind=COURSES)
+        query.order = ['subject']
+        results = list(query.fetch(offset=offset, limit=limit))
 
-        self_link = f"{request.host_url}{COURSES}/{id}"
+        courses = []
 
-        response = {
-            'id': id,
-            'subject': new_course['subject'],
-            'number': new_course['number'],
-            'title': new_course['title'],
-            'term': new_course['term'],
-            'instructor_id': new_course['instructor_id'],
-            'self': self_link,
+        for course in results:
+            courses.append({
+                "id": course.key.id,
+                'instructor_id': course['instructor_id'],
+                'number': course['number'],
+                'self': f"{request.host_url}{COURSES}/{course.key.id}",
+                'subject': course['subject'],
+                'term': course['term'],
+                'title': course['title']
+            })
+
+        next_offset = offset + limit
+        next_url = f"{request.host_url}{COURSES}?offset={next_offset}&limit={limit}" if courses else None
+
+        return {
+            "courses": courses,
+            "next": next_url
         }
-        return (response, 201)
-    except:
-        return ERROR_UNAUTHORIZED, 401
-
-# Get all courses
-@app.route('/' + COURSES, methods=['GET'])
-def get_courses():
-
-    # Set offset and limit parameters for first page
-    offset = int(request.args.get('offset', 0))
-    limit = 3
-
-    query = client.query(kind=COURSES)
-    query.order = ['subject']
-    results = list(query.fetch(offset=offset, limit=limit))
-
-    courses = []
-
-    for course in results:
-        courses.append({
-            "id": course.key.id,
-            'instructor_id': course['instructor_id'],
-            'number': course['number'],
-            'self': f"{request.host_url}{COURSES}/{course.key.id}",
-            'subject': course['subject'],
-            'term': course['term'],
-            'title': course['title']
-        })
-
-    next_offset = offset + limit
-    next_url = f"{request.host_url}{COURSES}?offset={next_offset}&limit={limit}" if courses else None
-
-    return {
-        "courses": courses,
-        "next": next_url
-    }
 
 # Get a course
-@app.route('/' + COURSES + '/<int:id>', methods=['GET'])
+@app.route('/' + COURSES + '/<int:id>', methods=['GET', 'PATCH', 'DELETE'])
 def get_a_course(id):
 
-    course_key = client.key(COURSES, id)
-    course = client.get(key=course_key)
+    if request.method == 'GET':
+        course_key = client.key(COURSES, id)
+        course = client.get(key=course_key)
 
-    if course is None:
-        return ERROR_NOT_FOUND, 404
-    else:
-        course['id'] = course.key.id
-        course['self'] = f"{request.host_url}{COURSES}/{id}"
+        if course is None:
+            return ERROR_NOT_FOUND, 404
+        else:
+            course['id'] = course.key.id
+            course['self'] = f"{request.host_url}{COURSES}/{id}"
 
-    return course
+        return course
 
-# Decode the JWT supplied in the Authorization header
-@app.route('/decode', methods=['GET'])
-def decode_jwt():
-    payload = verify_jwt(request)
-    return payload          
-        
+    if request.method == 'PATCH':
+        return
 
-# Generate a JWT from the Auth0 domain and return it
-# Request: JSON body with 2 properties with "username" and "password"
-#       of a user registered with this Auth0 domain
-# Response: JSON with the JWT as the value of the property id_token
-@app.route('/' + USERS_LOGIN, methods=['POST'])
-def login_user():
-    content = request.get_json()
-
-    for i in ['username', 'password']:
-        if i not in content:
-            return ERROR_INVALID_REQUEST_BODY, 400
-
-    username = content['username']
-
-    if username not in username_list:
-        return ERROR_UNAUTHORIZED, 401
-        
-    password = content['password']
-    
-    if password != 'Cheese1234!':
-        return ERROR_UNAUTHORIZED, 401
-    
-    body = {'grant_type':'password','username':username,
-            'password':password,
-            'client_id':CLIENT_ID,
-            'client_secret':CLIENT_SECRET
-           }
-
-    headers = { 'content-type': 'application/json' }
-    url = 'https://' + DOMAIN + '/oauth/token'
-    r = requests.post(url, json=body, headers=headers)
-    # print("Response: ", r.text)
-
-    response = r.json()
-    token = response['id_token']
-
-    return jsonify({"token": token})
+    if request.method == 'DELETE':
+        return       
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8080, debug=True)
-
