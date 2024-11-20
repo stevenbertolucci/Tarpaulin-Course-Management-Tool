@@ -185,163 +185,161 @@ def login_user():
 # Get all users if the Authorization header contains a valid JWT
 @app.route('/' + USERS, methods=['GET'])
 def get_users():
-    if request.method == 'GET':
-        try:
-            payload = verify_jwt(request)
+    try:
+        payload = verify_jwt(request)
 
-            user_id = payload.get('sub')
+        user_id = payload.get('sub')
 
-            query = client.query(kind=USERS)
-            query.order = ['role']
-            results = list(query.fetch())
+        query = client.query(kind=USERS)
+        query.order = ['role']
+        results = list(query.fetch())
 
-            # Verify that the admin only gets to view the users
-            if results[0]['sub'] != user_id:
-                return ERROR_PERMISSION, 403
+        # Verify that the admin only gets to view the users
+        if results[0]['sub'] != user_id:
+            return ERROR_PERMISSION, 403
 
-            users = []
+        users = []
 
-            for content in results:
-                user = {
-                    'id': content.key.id,
-                    'role': content['role'],
-                    'sub': content['sub']
-                } 
+        for content in results:
+            user = {
+                'id': content.key.id,
+                'role': content['role'],
+                'sub': content['sub']
+            } 
 
-                users.append(user)
+            users.append(user)
 
-            return jsonify(users)
-        
-        except:
-            return ERROR_UNAUTHORIZED, 401
+        return jsonify(users)
+    
+    except:
+        return ERROR_UNAUTHORIZED, 401
 
 # Get a user
 @app.route('/' + USERS + '/<int:id>', methods=['GET'])
 def get_a_user(id):
-    if request.method == 'GET':
-        try:
-            payload = verify_jwt(request)
-            # print("PAYLOAD: ", payload)
-            user_id = payload.get('sub')
+    try:
+        payload = verify_jwt(request)
+        # print("PAYLOAD: ", payload)
+        user_id = payload.get('sub')
 
-            # print("USER_ID: ", user_id)
-            # print("\n\n")
+        # print("USER_ID: ", user_id)
+        # print("\n\n")
 
-            key = client.key(USERS, id)
-            user = client.get(key)
+        key = client.key(USERS, id)
+        user = client.get(key)
 
-            if 'avatar_url' in user and user['avatar_url'] is not None:
-                avatar_url = f"{request.host_url}{USERS}/{id}/{AVATAR}"
+        if 'avatar_url' in user and user['avatar_url'] is not None:
+            avatar_url = f"{request.host_url}{USERS}/{id}/{AVATAR}"
+        else:
+            avatar_url = None
+
+        ########################################
+        #                                      #
+        #          DISPLAYING AN ADMIN         #
+        #                                      #
+        ########################################
+        if user['role'] == 'admin':
+
+            if avatar_url:
+                user = {
+                        'id': id,
+                        'role': user['role'],
+                        'sub': user['sub'],
+                        'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}"
+                    } 
+
+                return jsonify(user)
             else:
-                avatar_url = None
-
-            ########################################
-            #                                      #
-            #          DISPLAYING AN ADMIN         #
-            #                                      #
-            ########################################
-            if user['role'] == 'admin':
-
-                if avatar_url:
-                    user = {
-                            'id': id,
-                            'role': user['role'],
-                            'sub': user['sub'],
-                            'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}"
-                        } 
-
-                    return jsonify(user)
-                else:
-                    
-                    user = {
-                            'id': id,
-                            'role': user['role'],
-                            'sub': user['sub']
-                        } 
-
-                    return jsonify(user)
-
-            ########################################
-            #                                      #
-            #       DISPLAYING AN INSTRUCTOR       #
-            #                                      #
-            ########################################
-            elif user['role'] == 'instructor':
-
-                #print("ID: ", id)
-
-                #print("I'm searching for instructor.")
                 
-                # Checking for valid JWTs
-                # If not valid, return 403
-                if user['sub'] != user_id:
-                    return ERROR_PERMISSION, 403
+                user = {
+                        'id': id,
+                        'role': user['role'],
+                        'sub': user['sub']
+                    } 
 
-                if avatar_url:
-                    user = {
-                            'id': id,
-                            'role': user['role'],
-                            'sub': user['sub'],
-                            'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}",
-                            'courses': []
-                        }
+                return jsonify(user)
 
-                    return jsonify(user)
+        ########################################
+        #                                      #
+        #       DISPLAYING AN INSTRUCTOR       #
+        #                                      #
+        ########################################
+        elif user['role'] == 'instructor':
 
-                else:
-                    
-                    user = {
-                            'id': id,
-                            'role': user['role'],
-                            'sub': user['sub'],
-                            'courses': []
-                        } 
+            #print("ID: ", id)
 
-                    return jsonify(user)
-
-            ########################################
-            #                                      #
-            #         DISPLAYING A STUDENT         #
-            #                                      #
-            ########################################
-            elif user['role'] == 'student':
-
-                #print("ID: ", id)
-
-                #print("Searching for student.")
-
-                # Checking for valid JWTs
-                # If not valid, return 403
-                if user['sub'] != user_id:
-                    return ERROR_PERMISSION, 403
-
-                if avatar_url:
-                    user = {
-                            'courses': [],
-                            'id': id,
-                            'role': user['role'],
-                            'sub': user['sub'],
-                            'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}"
-                        } 
-
-                    return jsonify(user)
-                else:
-                    
-                    user = {
-                            'courses': [],
-                            'id': id,
-                            'role': user['role'],
-                            'sub': user['sub'],
-                        } 
-
-                    return jsonify(user)
-
-            else:
+            #print("I'm searching for instructor.")
+            
+            # Checking for valid JWTs
+            # If not valid, return 403
+            if user['sub'] != user_id:
                 return ERROR_PERMISSION, 403
 
-        except:
-            #print("Uh-oh")
-            return ERROR_UNAUTHORIZED, 401
+            if avatar_url:
+                user = {
+                        'id': id,
+                        'role': user['role'],
+                        'sub': user['sub'],
+                        'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}",
+                        'courses': []
+                    }
+
+                return jsonify(user)
+
+            else:
+                
+                user = {
+                        'id': id,
+                        'role': user['role'],
+                        'sub': user['sub'],
+                        'courses': []
+                    } 
+
+                return jsonify(user)
+
+        ########################################
+        #                                      #
+        #         DISPLAYING A STUDENT         #
+        #                                      #
+        ########################################
+        elif user['role'] == 'student':
+
+            #print("ID: ", id)
+
+            #print("Searching for student.")
+
+            # Checking for valid JWTs
+            # If not valid, return 403
+            if user['sub'] != user_id:
+                return ERROR_PERMISSION, 403
+
+            if avatar_url:
+                user = {
+                        'courses': [],
+                        'id': id,
+                        'role': user['role'],
+                        'sub': user['sub'],
+                        'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}"
+                    } 
+
+                return jsonify(user)
+            else:
+                
+                user = {
+                        'courses': [],
+                        'id': id,
+                        'role': user['role'],
+                        'sub': user['sub'],
+                    } 
+
+                return jsonify(user)
+
+        else:
+            return ERROR_PERMISSION, 403
+
+    except:
+        #print("Uh-oh")
+        return ERROR_UNAUTHORIZED, 401
         
 # Create/update a user's avatar OR
 # GET a user's avatar OR
