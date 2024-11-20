@@ -191,7 +191,7 @@ def get_a_user(id):
             key = client.key(USERS, id)
             user = client.get(key)
 
-            if 'avatar' in user:
+            if 'avatar_url' in user and user['avatar_url'] is not None:
                 avatar_url = f"{request.host_url}{USERS}/{id}/{AVATAR}"
             else:
                 avatar_url = None
@@ -308,10 +308,6 @@ def get_a_user(id):
 @app.route('/' + USERS + '/<int:id>' + '/' + AVATAR, methods=['POST'])
 def post_avatar(id):
 
-    # Check if there is an entry in request.files with the key 'file'
-    if 'file' not in request.files:
-        return ERROR_INVALID_REQUEST_BODY, 400
-
     try:
          # Verify JWT
         payload = verify_jwt(request)
@@ -324,6 +320,11 @@ def post_avatar(id):
         # If not valid, return 403
         if user['sub'] != user_id:
             return ERROR_PERMISSION, 403
+
+        # Check if there is an entry in request.files with the key 'file'
+        if 'file' not in request.files:
+            print('Uh-oh')
+            return ERROR_INVALID_REQUEST_BODY, 400
         
         # Set file_obj to the file sent in the request
         file_obj = request.files['file']
@@ -348,6 +349,7 @@ def post_avatar(id):
 
         # Update 'avatar_url' entity for the user
         user['avatar_url'] = f"{request.host_url}{USERS}/{id}/{AVATAR}"
+        # Save the avatar_url in datastore
         client.put(user) 
 
         return jsonify({'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}"}), 200
@@ -364,6 +366,8 @@ def get_avatar(id):
         # Verify JWT
         payload = verify_jwt(request)
         user_id = payload.get('sub')
+        # print("Request: ", request)
+        # print("Payload: ", payload)
 
         # Checking for valid JWTs
         key = client.key(USERS, id)
@@ -374,17 +378,16 @@ def get_avatar(id):
             return ERROR_PERMISSION, 403
         
         # If user has no avatar, return 404
-        if user['avatar_url'] is None:
+        # Not all users have avatar_url in their property
+        # Hence the user.get() call
+        if user.get('avatar_url') is None:
             return ERROR_NOT_FOUND, 404
-        
-        # Set file_obj to the file sent in the request
-        file_obj = request.files['file']
         
         storage_client = storage.Client()
         bucket = storage_client.get_bucket(AVATAR_BUCKET)
 
         # Create a blob with the given file name
-        blob = bucket.blob(file_obj.filename)
+        blob = bucket.blob('student1.jpg')
 
         # Create a file object in memory using Python io package
         file_obj = io.BytesIO()
@@ -395,7 +398,7 @@ def get_avatar(id):
         # Position the file_obj to its beginning
         file_obj.seek(0)
 
-        return send_file(file_obj, mimetype='image/x-png', download_name=file_obj.filename)
+        return send_file(file_obj, mimetype='image/x-png', download_name='student1.jpg')
     except:
         return ERROR_UNAUTHORIZED, 401
     
@@ -417,20 +420,21 @@ def delete_avatar(id):
             return ERROR_PERMISSION, 403
         
         # If user has no avatar, return 404
-        if user['avatar_url'] is None:
+        if user.get('avatar_url') is None:
             return ERROR_NOT_FOUND, 404
-        
-        # Set file_obj to the file sent in the request
-        file_obj = request.files['file']
         
         storage_client = storage.Client()
 
         bucket = storage_client.get_bucket(AVATAR_BUCKET)
 
-        blob = bucket.blob(file_obj.filename)
+        blob = bucket.blob('student1.jpg')
 
         # Delete the file from Cloud Storage
         blob.delete()
+
+        # Update the avatar_url for user
+        user['avatar_url'] = None
+        client.put(user)
 
         return '', 204
         
@@ -462,6 +466,7 @@ def login_user():
         return ERROR_UNAUTHORIZED, 401
         
     password = content['password']
+    
     if password != 'Cheese1234!':
         return ERROR_UNAUTHORIZED, 401
     
