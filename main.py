@@ -48,6 +48,8 @@ username_list = [
     'student4@osu.com', 'student5@osu.com', 'student6@osu.com'
 ]
 
+course_properties = ["instructor_id", "number", "subject", "term", "title"]
+
 oauth = OAuth(app)
 
 auth0 = oauth.register(
@@ -578,6 +580,7 @@ def post_courses():
 # Get a course
 @app.route('/' + COURSES + '/<int:id>', methods=['GET', 'PATCH', 'DELETE'])
 def get_a_course(id):
+    content = request.get_json()
 
     if request.method == 'GET':
         course_key = client.key(COURSES, id)
@@ -592,10 +595,68 @@ def get_a_course(id):
         return course
 
     if request.method == 'PATCH':
-        return
+        try:
+            # Verify JWT
+            payload = verify_jwt(request)
+            user_role = payload.get('role')
+
+            # Get course
+            course_key = client.key(COURSES, id)
+            course = client.get(key=course_key)
+
+            # If course doesn't exist, return 403 error code
+            if course is None:
+                return ERROR_PERMISSION, 403
+
+            # Is the user updating the course an admin?
+            if user_role != 'admin':
+                return ERROR_PERMISSION, 403
+
+            for property, value in content.items():
+                
+                # Validating if the instructor id exists
+                if property == 'instructor_id':
+                    query = client.query(kind=COURSES)
+                    query.add_filter(filter=PropertyFilter('instructor_id', '=', request.get('instructor_id')))
+                    results = list(query.fetch())
+
+                    if results is None:
+                        return ERROR_INVALID_REQUEST_BODY, 400
+                
+                course[property] = value
+
+            client.put(course)
+
+            course['id'] = course.key.id
+            course['self'] = f"{request.host_url}{COURSES}/{id}"
+
+            return course, 200
+
+        except:
+            return ERROR_UNAUTHORIZED, 401
 
     if request.method == 'DELETE':
-        return       
+        try:
+            # Verify JWT
+            payload = verify_jwt(request)
+            user_role = payload.get('role')
+
+            # Get course
+            course_key = client.key(COURSES, id)
+            course = client.get(key=course_key)
+
+            # If course doesn't exist, return 403 error code
+            if course is None:
+                return ERROR_PERMISSION, 403
+
+            # Is the user updating the course an admin?
+            if user_role != 'admin':
+                return ERROR_PERMISSION, 403
+
+            client.delete(course_key)
+            return '', 204
+        except:
+            return ERROR_UNAUTHORIZED, 401       
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8080, debug=True)
