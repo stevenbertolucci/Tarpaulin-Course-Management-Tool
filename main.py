@@ -598,7 +598,11 @@ def get_a_course(id):
         try:
             # Verify JWT
             payload = verify_jwt(request)
-            user_role = payload.get('role')
+            user_id = payload.get('sub')
+
+            print("PAYLOAD", payload)
+
+            print("USER ID: ", user_id)
 
             # Get course
             course_key = client.key(COURSES, id)
@@ -608,19 +612,29 @@ def get_a_course(id):
             if course is None:
                 return ERROR_PERMISSION, 403
 
-            # Is the user updating the course an admin?
-            if user_role != 'admin':
+            # Check if it is admin adding the course
+            query = client.query(kind=USERS)
+            query.add_filter(filter=PropertyFilter('sub', '=', user_id))
+            results = list(query.fetch())
+            print("RESULTS: ", results)
+
+            # Check if role is admin because only admin can create courses
+            if not results or results[0]['role'] != 'admin':
                 return ERROR_PERMISSION, 403
+            
+            print('Uh-oh')
 
             for property, value in content.items():
+                #print("PROPERTY", property)
+                #print('CONTENT: ', content)
                 
                 # Validating if the instructor id exists
                 if property == 'instructor_id':
                     query = client.query(kind=COURSES)
-                    query.add_filter(filter=PropertyFilter('instructor_id', '=', request.get('instructor_id')))
+                    query.add_filter(filter=PropertyFilter('instructor_id', '=', content.get('instructor_id')))
                     results = list(query.fetch())
 
-                    if results is None:
+                    if not results:
                         return ERROR_INVALID_REQUEST_BODY, 400
                 
                 course[property] = value
