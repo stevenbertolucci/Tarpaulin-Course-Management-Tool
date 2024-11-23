@@ -190,7 +190,7 @@ def login_user():
 def get_users():
     try:
         payload = verify_jwt(request)
-        print("PAYLOAD: ", payload )
+        # print("PAYLOAD: ", payload )
         
         user_id = payload.get('sub')
 
@@ -285,7 +285,7 @@ def get_a_user(id):
             query.add_filter(filter=PropertyFilter('instructor_id', '=', id))
             courses = list(query.fetch())
 
-            print("COURSES: ", courses)
+            # print("COURSES: ", courses)
 
             # If instructor is teaching a course
             if courses is not None:
@@ -404,7 +404,7 @@ def post_avatar(id):
 
             # Check if there is an entry in request.files with the key 'file'
             if 'file' not in request.files:
-                print('Uh-oh')
+                # print('Uh-oh')
                 return ERROR_INVALID_REQUEST_BODY, 400
             
             # Set file_obj to the file sent in the request
@@ -520,11 +520,11 @@ def post_avatar(id):
 def post_courses():
     if request.method == "POST":
         content = request.get_json()
-        print("Content: ", content)
+        # print("Content: ", content)
 
         try:
             payload = verify_jwt(request)
-            print("Payload: ", payload)
+            # print("Payload: ", payload)
             user_id = payload.get('sub')
 
             # If the request body do not contain any one of the required field, return 400
@@ -588,12 +588,12 @@ def post_courses():
         offset = int(request.args.get('offset', 0))
         limit = 3
 
-        print("Uh-oh")
+        # print("Uh-oh")
 
         query = client.query(kind=COURSES)
         query.order = ['subject']
         results = list(query.fetch(offset=offset, limit=limit))
-        print("RESULTS: ", results)
+        # print("RESULTS: ", results)
 
         courses = []
 
@@ -639,9 +639,9 @@ def get_a_course(id):
             payload = verify_jwt(request)
             user_id = payload.get('sub')
 
-            print("PAYLOAD", payload)
+            # print("PAYLOAD", payload)
 
-            print("USER ID: ", user_id)
+            # print("USER ID: ", user_id)
 
             # Get course
             course_key = client.key(COURSES, id)
@@ -655,13 +655,13 @@ def get_a_course(id):
             query = client.query(kind=USERS)
             query.add_filter(filter=PropertyFilter('sub', '=', user_id))
             results = list(query.fetch())
-            print("RESULTS: ", results)
+            # print("RESULTS: ", results)
 
             # Check if role is admin because only admin can create courses
             if not results or results[0]['role'] != 'admin':
                 return ERROR_PERMISSION, 403
             
-            print('Uh-oh')
+            # print('Uh-oh')
 
             for property, value in content.items():
                 #print("PROPERTY", property)
