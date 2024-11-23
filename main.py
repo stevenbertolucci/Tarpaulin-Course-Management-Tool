@@ -554,9 +554,9 @@ def post_courses():
             # print('Uh-oh')
 
             # Create courses entity in datastore
-            new_course = datastore.Entity(key=client.key(COURSES))
+            course = datastore.Entity(key=client.key(COURSES))
 
-            new_course.update({
+            course.update({
                 'subject': content['subject'],
                 'number': content['number'],
                 'title': content['title'],
@@ -564,18 +564,18 @@ def post_courses():
                 'instructor_id': content['instructor_id']
             })
 
-            client.put(new_course)
-            id = new_course.key.id
+            client.put(course)
+            id = course.key.id
 
             self_link = f"{request.host_url}{COURSES}/{id}"
 
             response = {
                 'id': id,
-                'subject': new_course['subject'],
-                'number': new_course['number'],
-                'title': new_course['title'],
-                'term': new_course['term'],
-                'instructor_id': new_course['instructor_id'],
+                'subject': course['subject'],
+                'number': course['number'],
+                'title': course['title'],
+                'term': course['term'],
+                'instructor_id': course['instructor_id'],
                 'self': self_link,
             }
             return (response, 201)
