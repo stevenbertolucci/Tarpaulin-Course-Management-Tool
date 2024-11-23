@@ -190,16 +190,14 @@ def login_user():
 def get_users():
     try:
         payload = verify_jwt(request)
-
-        user_id = payload.get('sub')
-
-        query = client.query(kind=USERS)
-        query.order = ['role']
-        results = list(query.fetch())
+        user_role = payload.get('role')
 
         # Verify that the admin only gets to view the users
-        if results[0]['sub'] != user_id:
+        if user_role != 'admin':
             return ERROR_PERMISSION, 403
+
+        query = client.query(kind=USERS)
+        results = list(query.fetch())
 
         users = []
 
@@ -278,27 +276,64 @@ def get_a_user(id):
             if user['sub'] != user_id:
                 return ERROR_PERMISSION, 403
 
-            if avatar_url:
-                user = {
-                        'id': id,
-                        'role': user['role'],
-                        'sub': user['sub'],
-                        'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}",
-                        'courses': []
-                    }
+            # Get all courses that the instructor teaches
+            query = client.query(kind=COURSES)
+            query.add_filter(filter=PropertyFilter('instructor_id', '=', user_id))
+            courses = list(query.fetch())
 
-                return jsonify(user)
+            # If instructor is teaching a course
+            if courses is not None:
+                list_of_courses = []
+                for course in courses:
+                    list_of_courses.append({
+                        'courses': f"{request.host_url}{COURSES}/{course.key.id}"
+                    })
 
+                # If instructor has an avatar
+                if avatar_url:
+                    user = {
+                            'id': id,
+                            'role': user['role'],
+                            'sub': user['sub'],
+                            'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}",
+                            'courses': list_of_courses
+                        }
+
+                    return jsonify(user)
+
+                else:
+                    
+                    user = {
+                            'id': id,
+                            'role': user['role'],
+                            'sub': user['sub'],
+                            'courses': []
+                        } 
+
+                    return jsonify(user)
             else:
-                
-                user = {
-                        'id': id,
-                        'role': user['role'],
-                        'sub': user['sub'],
-                        'courses': []
-                    } 
+                # If instructor has an avatar
+                if avatar_url:
+                    user = {
+                            'id': id,
+                            'role': user['role'],
+                            'sub': user['sub'],
+                            'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}",
+                            'courses': []
+                        }
 
-                return jsonify(user)
+                    return jsonify(user)
+
+                else:
+                    
+                    user = {
+                            'id': id,
+                            'role': user['role'],
+                            'sub': user['sub'],
+                            'courses': []
+                        } 
+
+                    return jsonify(user)
 
         ########################################
         #                                      #
