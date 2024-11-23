@@ -190,14 +190,17 @@ def login_user():
 def get_users():
     try:
         payload = verify_jwt(request)
-        user_role = payload.get('role')
-
-        # Verify that the admin only gets to view the users
-        if user_role != 'admin':
-            return ERROR_PERMISSION, 403
+        print("PAYLOAD: ", payload )
+        
+        user_id = payload.get('sub')
 
         query = client.query(kind=USERS)
+        query.order = ['role']
         results = list(query.fetch())
+
+        # Verify that the admin only gets to view the users
+        if results[0]['sub'] != user_id:
+            return ERROR_PERMISSION, 403
 
         users = []
 
@@ -229,7 +232,8 @@ def get_a_user(id):
         key = client.key(USERS, id)
         user = client.get(key)
 
-        if 'avatar_url' in user and user['avatar_url'] is not None:
+        # Check if user has a avatar by comparing the value of 'Y' or 'N'. 'Y' = Yes, 'N' = No
+        if user['avatar'] == 'Y':
             avatar_url = f"{request.host_url}{USERS}/{id}/{AVATAR}"
         else:
             avatar_url = None
@@ -278,16 +282,16 @@ def get_a_user(id):
 
             # Get all courses that the instructor teaches
             query = client.query(kind=COURSES)
-            query.add_filter(filter=PropertyFilter('instructor_id', '=', user_id))
+            query.add_filter(filter=PropertyFilter('instructor_id', '=', id))
             courses = list(query.fetch())
+
+            print("COURSES: ", courses)
 
             # If instructor is teaching a course
             if courses is not None:
                 list_of_courses = []
                 for course in courses:
-                    list_of_courses.append({
-                        'courses': f"{request.host_url}{COURSES}/{course.key.id}"
-                    })
+                    list_of_courses.append(f"{request.host_url}{COURSES}/{course.key.id}")
 
                 # If instructor has an avatar
                 if avatar_url:
@@ -307,7 +311,7 @@ def get_a_user(id):
                             'id': id,
                             'role': user['role'],
                             'sub': user['sub'],
-                            'courses': []
+                            'courses': list_of_courses
                         } 
 
                     return jsonify(user)
@@ -424,9 +428,9 @@ def post_avatar(id):
             # Upload the file into Cloud Storage
             blob.upload_from_file(file_obj)
 
-            # Update 'avatar_url' entity for the user
-            user['avatar_url'] = f"{request.host_url}{USERS}/{id}/{AVATAR}"
-            # Save the avatar_url in datastore
+            # Update 'avatar' entity for the user to 'Y' for Yes
+            user['avatar'] = 'Y'
+            # Save the avatar status in datastore
             client.put(user) 
 
             return jsonify({'avatar_url': f"{request.host_url}{USERS}/{id}/{AVATAR}"}), 200
@@ -452,9 +456,7 @@ def post_avatar(id):
                 return ERROR_PERMISSION, 403
             
             # If user has no avatar, return 404
-            # Not all users have avatar_url in their property
-            # Hence the user.get() call
-            if user.get('avatar_url') is None:
+            if user['avatar'] == 'N':
                 return ERROR_NOT_FOUND, 404
             
             storage_client = storage.Client()
@@ -491,7 +493,7 @@ def post_avatar(id):
                 return ERROR_PERMISSION, 403
             
             # If user has no avatar, return 404
-            if user.get('avatar_url') is None:
+            if user.get('avatar') == 'N':
                 return ERROR_NOT_FOUND, 404
             
             storage_client = storage.Client()
@@ -503,8 +505,8 @@ def post_avatar(id):
             # Delete the file from Cloud Storage
             blob.delete()
 
-            # Update the avatar_url for user
-            user['avatar_url'] = None
+            # Update the avatar for user
+            user['avatar'] = 'N'
             client.put(user)
 
             return '', 204
@@ -516,10 +518,9 @@ def post_avatar(id):
 # Get all courses
 @app.route('/' + COURSES, methods=['POST', 'GET'])
 def post_courses():
-    content = request.get_json()
-    print("Content: ", content)
-
     if request.method == "POST":
+        content = request.get_json()
+        print("Content: ", content)
 
         try:
             payload = verify_jwt(request)
@@ -587,9 +588,12 @@ def post_courses():
         offset = int(request.args.get('offset', 0))
         limit = 3
 
+        print("Uh-oh")
+
         query = client.query(kind=COURSES)
         query.order = ['subject']
         results = list(query.fetch(offset=offset, limit=limit))
+        print("RESULTS: ", results)
 
         courses = []
 
@@ -615,8 +619,7 @@ def post_courses():
 # Get a course
 @app.route('/' + COURSES + '/<int:id>', methods=['GET', 'PATCH', 'DELETE'])
 def get_a_course(id):
-    content = request.get_json()
-
+    
     if request.method == 'GET':
         course_key = client.key(COURSES, id)
         course = client.get(key=course_key)
@@ -630,6 +633,7 @@ def get_a_course(id):
         return course
 
     if request.method == 'PATCH':
+        content = request.get_json()
         try:
             # Verify JWT
             payload = verify_jwt(request)
