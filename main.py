@@ -41,6 +41,7 @@ ERROR_INVALID_REQUEST_BODY = {"Error" : "The request body is invalid"}
 ERROR_UNAUTHORIZED = {"Error" : "Unauthorized"}
 ERROR_PERMISSION = {"Error": "You don't have permission on this resource"}
 ERROR_NOT_FOUND = {"Error" : "Not found"}
+ERROR_INVALID_ENROLLMENT = {"Error": "Enrollment data is invalid"}
 
 # Constants
 username_list = [
@@ -719,28 +720,53 @@ def update_enrollment(id):
         try:
             payload = verify_jwt(request)
             user_id = payload.get('sub')
+            print("PAYLOAD: ", payload)
+            print("USER ID: ", user_id)
 
             # Get course
             course_key = client.key(COURSES, id)
             course = client.get(key=course_key)
 
+            print('Uh-oh 1')
+
             # If course doesn't exist, return 403 error code
             if course is None:
                 return ERROR_PERMISSION, 403
 
-            # Check if it is admin adding the course
+            print('Uh-oh 2')
+
+            # Create a property if it does not exist in the datastore
+            if 'enrollment' not in course:
+                course['enrollment'] = []
+
+            # Check if it is admin/instructor adding enrollment to the course
             query = client.query(kind=USERS)
             query.add_filter(filter=PropertyFilter('sub', '=', user_id))
             results = list(query.fetch())
 
+            print('Uh-oh 3')
+
             # Check if role is admin or instructor because only admin/instructor can update enrollment
-            if not results or results[0]['role'] != 'admin' or results[0]['role'] != 'instructor':
+            if not results or results[0]['role'] not in ['admin', 'instructor']:
                 return ERROR_PERMISSION, 403
+
+            print('Uh-oh 4')
 
             # Get request content
             content = request.get_json()
+            print("CONTENT: ", content)
             students_to_add = content.get('add', [])
-            students_to_drop = content.get('drop', [])
+            print("STUDENTS TO ADD: ", students_to_add)
+            students_to_remove = content.get('remove', [])
+            print("STUDENTS TO REMOVE: ", students_to_remove)
+
+            # Check if students exist in both add and remove JSON attribute using intersection
+            error = set(students_to_add) & set(students_to_remove)
+
+            if error:
+                return ERROR_INVALID_ENROLLMENT, 409
+
+            print('Uh-oh 5')
 
             # If there are students in 'add' array
             if students_to_add:
@@ -748,33 +774,54 @@ def update_enrollment(id):
 
                 # Validate if the student IDs exists
                 for student in students_to_add:
-                    query = client.query(kind=USERS)
-                    query.add_filter(filter=PropertyFilter('sub', '=', student))
-                    result = list(query.fetch())
+                    print('STUDENT: ', student)
+                    student_key = client.key(USERS, student)
+                    result = client.get(student_key)
+                    print('RESULTS: ', result)
 
+                    # If student exists
                     if result:
                         add_students.append(student)
+                    # Return invalid data code 409
+                    else: 
+                        return ERROR_INVALID_ENROLLMENT, 409
+
+                    print('Uh-oh 6')
+
+                 # Add students
+                for student in add_students:
+                    # Skip students that are already in the course
+                    if student not in course['enrollment']:
+                        course['enrollment'].append(student)
             
             # If there are students in 'drop' array
-            if students_to_drop:
-                drop_students = []
+            if students_to_remove:
+                remove_students = []
+
+                print('Uh-oh 7')
 
                 # Validate if the student IDs exists
-                for student in students_to_drop:
-                    query = client.query(kind=USERS)
-                    query.add_filter(filter=PropertyFilter('sub', '=', student))
-                    result = list(query.fetch())
+                for student in students_to_remove:
+                    student_key = client.key(USERS, student)
+                    result = client.get(student_key)
+                    print('RESULTS: ', result)
 
-                    if result:
-                        drop_students.append(student)
+                    if results:
+                        remove_students.append(student)
+                    else:
+                        return ERROR_INVALID_ENROLLMENT, 409
 
-            # Create a property if it does not exist in the datastore
-            if 'enrollment' not in course:
-                course['enrollment'] = []
+                    print('Uh-oh 8')
 
-            # Add students
+                 # Drop students
+                for student in remove_students:
+                    # Skip students not enrolled in the course
+                    if student in course['enrollment']:
+                        course['enrollment'].remove(student)
 
-            return   
+            client.put(course)
+
+            return '', 200 
         except:
             return ERROR_UNAUTHORIZED, 401
 
