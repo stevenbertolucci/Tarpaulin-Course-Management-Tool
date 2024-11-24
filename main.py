@@ -27,6 +27,7 @@ USERS_LOGIN = "users/login"
 USERS = "users"
 AVATAR = "avatar"
 COURSES = "courses"
+STUDENTS = "students"
 
 # Update the values of the following 3 variables
 CLIENT_ID = '3sZ0EYeu3CIq98xgY8WbetVlnUL4iAfk'
@@ -709,7 +710,73 @@ def get_a_course(id):
             client.delete(course_key)
             return '', 204
         except:
-            return ERROR_UNAUTHORIZED, 401       
+            return ERROR_UNAUTHORIZED, 401    
+
+# Update enrollment in a course
+@app.route('/' + COURSES + '/<int:id>/' + STUDENTS, methods=['PATCH', 'GET'])
+def update_enrollment(id):
+    if request.method == 'PATCH':
+        try:
+            payload = verify_jwt(request)
+            user_id = payload.get('sub')
+
+            # Get course
+            course_key = client.key(COURSES, id)
+            course = client.get(key=course_key)
+
+            # If course doesn't exist, return 403 error code
+            if course is None:
+                return ERROR_PERMISSION, 403
+
+            # Check if it is admin adding the course
+            query = client.query(kind=USERS)
+            query.add_filter(filter=PropertyFilter('sub', '=', user_id))
+            results = list(query.fetch())
+
+            # Check if role is admin or instructor because only admin/instructor can update enrollment
+            if not results or results[0]['role'] != 'admin' or results[0]['role'] != 'instructor':
+                return ERROR_PERMISSION, 403
+
+            # Get request content
+            content = request.get_json()
+            students_to_add = content.get('add', [])
+            students_to_drop = content.get('drop', [])
+
+            # If there are students in 'add' array
+            if students_to_add:
+                add_students = []
+
+                # Validate if the student IDs exists
+                for student in students_to_add:
+                    query = client.query(kind=USERS)
+                    query.add_filter(filter=PropertyFilter('sub', '=', student))
+                    result = list(query.fetch())
+
+                    if result:
+                        add_students.append(student)
+            
+            # If there are students in 'drop' array
+            if students_to_drop:
+                drop_students = []
+
+                # Validate if the student IDs exists
+                for student in students_to_drop:
+                    query = client.query(kind=USERS)
+                    query.add_filter(filter=PropertyFilter('sub', '=', student))
+                    result = list(query.fetch())
+
+                    if result:
+                        drop_students.append(student)
+
+            # Create a property if it does not exist in the datastore
+            if 'enrollment' not in course:
+                course['enrollment'] = []
+
+            # Add students
+
+            return   
+        except:
+            return ERROR_UNAUTHORIZED, 401
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8080, debug=True)
