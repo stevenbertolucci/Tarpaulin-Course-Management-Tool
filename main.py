@@ -694,7 +694,9 @@ def get_a_course(id):
         try:
             # Verify JWT
             payload = verify_jwt(request)
-            user_role = payload.get('role')
+            print("PAYLOAD: ", payload)
+            user_id = payload.get('sub')
+            print("USER ID: ", user_id)
 
             # Get course
             course_key = client.key(COURSES, id)
@@ -704,8 +706,13 @@ def get_a_course(id):
             if course is None:
                 return ERROR_PERMISSION, 403
 
-            # Is the user updating the course an admin?
-            if user_role != 'admin':
+            # Check if it is admin/instructor adding enrollment to the course
+            query = client.query(kind=USERS)
+            query.add_filter(filter=PropertyFilter('sub', '=', user_id))
+            results = list(query.fetch())
+
+            # Check if role is admin or instructor because only admin/instructor can update enrollment
+            if not results or results[0]['role'] != 'admin':
                 return ERROR_PERMISSION, 403
 
             client.delete(course_key)
@@ -822,6 +829,37 @@ def update_enrollment(id):
             client.put(course)
 
             return '', 200 
+        except:
+            return ERROR_UNAUTHORIZED, 401
+
+    if request.method == 'GET':
+        try:
+            payload = verify_jwt(request)
+            user_id = payload.get('sub')
+
+            # Get course
+            course_key = client.key(COURSES, id)
+            course = client.get(key=course_key)
+
+            # If course doesn't exist, return 403 error code
+            if course is None:
+                return ERROR_PERMISSION, 403
+
+            # Check if it is admin/instructor adding enrollment to the course
+            query = client.query(kind=USERS)
+            query.add_filter(filter=PropertyFilter('sub', '=', user_id))
+            results = list(query.fetch())
+
+            # Check if role is admin or instructor because only admin/instructor can update enrollment
+            if not results or results[0]['role'] not in ['admin', 'instructor']:
+                return ERROR_PERMISSION, 403
+
+            if course.get('enrollment'):
+                students = course['enrollment']
+            else:
+                students = []
+
+            return students, 200 
         except:
             return ERROR_UNAUTHORIZED, 401
 
