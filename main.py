@@ -510,7 +510,7 @@ def post_avatar(id):
             bucket = storage_client.get_bucket(AVATAR_BUCKET)
 
             # Create a blob with the given file name
-            blob = bucket.blob('student1.jpg')
+            blob = bucket.blob('student1.png')
 
             # Create a file object in memory using Python io package
             file_obj = io.BytesIO()
@@ -521,7 +521,7 @@ def post_avatar(id):
             # Position the file_obj to its beginning
             file_obj.seek(0)
 
-            return send_file(file_obj, mimetype='image/x-png', download_name='student1.jpg')
+            return send_file(file_obj, mimetype='image/png', as_attachment=False, download_name='student1.png')
         except:
             return ERROR_UNAUTHORIZED, 401
 
