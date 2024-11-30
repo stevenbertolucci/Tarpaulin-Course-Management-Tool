@@ -547,7 +547,7 @@ def post_avatar(id):
 
             bucket = storage_client.get_bucket(AVATAR_BUCKET)
 
-            blob = bucket.blob('student1.jpg')
+            blob = bucket.blob('student1.png')
 
             # Delete the file from Cloud Storage
             blob.delete()
