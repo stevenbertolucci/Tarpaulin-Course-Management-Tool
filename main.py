@@ -85,7 +85,7 @@ def verify_jwt(request):
     if 'Authorization' in request.headers:
         auth_header = request.headers['Authorization'].split()
         token = auth_header[1]
-        # print("Token from verify_jwt: ", token)
+        
     else:
         raise AuthError({"code": "no auth header",
                             "description":
@@ -180,7 +180,6 @@ def login_user():
     headers = { 'content-type': 'application/json' }
     url = 'https://' + DOMAIN + '/oauth/token'
     r = requests.post(url, json=body, headers=headers)
-    # print("Response: ", r.text)
 
     response = r.json()
     token = response['id_token']
@@ -192,10 +191,7 @@ def login_user():
 def get_users():
     try:
         payload = verify_jwt(request)
-        # print("PAYLOAD: ", payload )
-        
         user_id = payload.get('sub')
-
         query = client.query(kind=USERS)
         query.order = ['role']
         results = list(query.fetch())
@@ -225,12 +221,7 @@ def get_users():
 def get_a_user(id):
     try:
         payload = verify_jwt(request)
-        # print("PAYLOAD: ", payload)
         user_id = payload.get('sub')
-
-        # print("USER_ID: ", user_id)
-        # print("\n\n")
-
         key = client.key(USERS, id)
         user = client.get(key)
 
@@ -273,10 +264,6 @@ def get_a_user(id):
         ########################################
         elif user['role'] == 'instructor':
 
-            #print("ID: ", id)
-
-            #print("I'm searching for instructor.")
-            
             # Checking for valid JWTs
             # If not valid, return 403
             if user['sub'] != user_id:
@@ -286,8 +273,6 @@ def get_a_user(id):
             query = client.query(kind=COURSES)
             query.add_filter(filter=PropertyFilter('instructor_id', '=', id))
             courses = list(query.fetch())
-
-            # print("COURSES: ", courses)
 
             # If instructor is teaching a course
             if courses is not None:
@@ -348,10 +333,6 @@ def get_a_user(id):
         ########################################
         elif user['role'] == 'student':
 
-            #print("ID: ", id)
-
-            #print("Searching for student.")
-
             # Checking for valid JWTs
             # If not valid, return 403
             if user['sub'] != user_id:
@@ -360,12 +341,7 @@ def get_a_user(id):
             # Get all courses that the instructor teaches
             query = client.query(kind=COURSES)
             courses = list(query.fetch())
-
-            #print("STUDENT ID: ", id)
-
             student_courses = []
-
-            #print('Does not compute!')
 
             # Iterating through courses to see if it contains any students
             for course in courses:
@@ -377,8 +353,6 @@ def get_a_user(id):
                 # Checking to see if that course has enrollment
                 if id in enrollment:
                     student_courses.append(f"{request.host_url}{COURSES}/{course.key.id}")
-
-            #print('Does not compute! 2')
 
             if student_courses is not None:
                 if avatar_url:
@@ -427,7 +401,6 @@ def get_a_user(id):
             return ERROR_PERMISSION, 403
 
     except:
-        #print("Uh-oh")
         return ERROR_UNAUTHORIZED, 401
         
 # Create/update a user's avatar OR
@@ -451,7 +424,6 @@ def post_avatar(id):
 
             # Check if there is an entry in request.files with the key 'file'
             if 'file' not in request.files:
-                # print('Uh-oh')
                 return ERROR_INVALID_REQUEST_BODY, 400
             
             # Set file_obj to the file sent in the request
@@ -491,8 +463,6 @@ def post_avatar(id):
             # Verify JWT
             payload = verify_jwt(request)
             user_id = payload.get('sub')
-            # print("Request: ", request)
-            # print("Payload: ", payload)
 
             # Checking for valid JWTs
             key = client.key(USERS, id)
@@ -567,11 +537,9 @@ def post_avatar(id):
 def post_courses():
     if request.method == "POST":
         content = request.get_json()
-        # print("Content: ", content)
 
         try:
             payload = verify_jwt(request)
-            # print("Payload: ", payload)
             user_id = payload.get('sub')
 
             # If the request body do not contain any one of the required field, return 400
@@ -583,13 +551,10 @@ def post_courses():
             query = client.query(kind=USERS)
             query.add_filter(filter=PropertyFilter('sub', '=', user_id))
             results = list(query.fetch())
-            #print("RESULTS: ", results)
 
             # Check if role is admin because only admin can create courses
             if not results or results[0]['role'] != 'admin':
                 return ERROR_PERMISSION, 403
-            
-            # print("uh-oh")
 
             # Check to see if the content of the request contains a valid instructor_id and that id matches the instructor
             user = client.key(USERS, content['instructor_id'])
@@ -598,8 +563,6 @@ def post_courses():
             # If no instructor is found, return 400
             if instructor is not None and instructor['role'] != 'instructor':
                 return ERROR_INVALID_REQUEST_BODY, 400
-            
-            # print('Uh-oh')
 
             # Create courses entity in datastore
             course = datastore.Entity(key=client.key(COURSES))
@@ -634,14 +597,9 @@ def post_courses():
         # Set offset and limit parameters for first page
         offset = int(request.args.get('offset', 0))
         limit = 3
-
-        # print("Uh-oh")
-
         query = client.query(kind=COURSES)
         query.order = ['subject']
         results = list(query.fetch(offset=offset, limit=limit))
-        # print("RESULTS: ", results)
-
         courses = []
 
         for course in results:
@@ -686,10 +644,6 @@ def get_a_course(id):
             payload = verify_jwt(request)
             user_id = payload.get('sub')
 
-            # print("PAYLOAD", payload)
-
-            # print("USER ID: ", user_id)
-
             # Get course
             course_key = client.key(COURSES, id)
             course = client.get(key=course_key)
@@ -702,18 +656,12 @@ def get_a_course(id):
             query = client.query(kind=USERS)
             query.add_filter(filter=PropertyFilter('sub', '=', user_id))
             results = list(query.fetch())
-            # print("RESULTS: ", results)
 
             # Check if role is admin because only admin can create courses
             if not results or results[0]['role'] != 'admin':
                 return ERROR_PERMISSION, 403
-            
-            # print('Uh-oh')
 
             for property, value in content.items():
-                #print("PROPERTY", property)
-                #print('CONTENT: ', content)
-                
                 # Validating if the instructor id exists
                 if property == 'instructor_id':
                     query = client.query(kind=COURSES)
@@ -726,7 +674,6 @@ def get_a_course(id):
                 course[property] = value
 
             client.put(course)
-
             course['id'] = course.key.id
             course['self'] = f"{request.host_url}{COURSES}/{id}"
 
@@ -739,9 +686,7 @@ def get_a_course(id):
         try:
             # Verify JWT
             payload = verify_jwt(request)
-            #print("PAYLOAD: ", payload)
             user_id = payload.get('sub')
-            #print("USER ID: ", user_id)
 
             # Get course
             course_key = client.key(COURSES, id)
@@ -772,20 +717,14 @@ def update_enrollment(id):
         try:
             payload = verify_jwt(request)
             user_id = payload.get('sub')
-            # print("PAYLOAD: ", payload)
-            # print("USER ID: ", user_id)
 
             # Get course
             course_key = client.key(COURSES, id)
             course = client.get(key=course_key)
 
-            # print('Uh-oh 1')
-
             # If course doesn't exist, return 403 error code
             if course is None:
                 return ERROR_PERMISSION, 403
-
-            # print('Uh-oh 2')
 
             # Create a property if it does not exist in the datastore
             if 'enrollment' not in course:
@@ -796,21 +735,14 @@ def update_enrollment(id):
             query.add_filter(filter=PropertyFilter('sub', '=', user_id))
             results = list(query.fetch())
 
-            # print('Uh-oh 3')
-
             # Check if role is admin or instructor because only admin/instructor can update enrollment
             if not results or results[0]['role'] not in ['admin', 'instructor']:
                 return ERROR_PERMISSION, 403
 
-            # print('Uh-oh 4')
-
             # Get request content
             content = request.get_json()
-            # print("CONTENT: ", content)
             students_to_add = content.get('add', [])
-            # print("STUDENTS TO ADD: ", students_to_add)
             students_to_remove = content.get('remove', [])
-            # print("STUDENTS TO REMOVE: ", students_to_remove)
 
             # Check if students exist in both add and remove JSON attribute using intersection
             error = set(students_to_add) & set(students_to_remove)
@@ -818,18 +750,14 @@ def update_enrollment(id):
             if error:
                 return ERROR_INVALID_ENROLLMENT, 409
 
-            # print('Uh-oh 5')
-
             # If there are students in 'add' array
             if students_to_add:
                 add_students = []
 
                 # Validate if the student IDs exists
                 for student in students_to_add:
-                    # print('STUDENT: ', student)
                     student_key = client.key(USERS, student)
                     result = client.get(student_key)
-                    # print('RESULTS: ', result)
 
                     # If student exists
                     if result:
@@ -837,8 +765,6 @@ def update_enrollment(id):
                     # Return invalid data code 409
                     else: 
                         return ERROR_INVALID_ENROLLMENT, 409
-
-                    # print('Uh-oh 6')
 
                  # Add students
                 for student in add_students:
@@ -850,20 +776,15 @@ def update_enrollment(id):
             if students_to_remove:
                 remove_students = []
 
-                # print('Uh-oh 7')
-
                 # Validate if the student IDs exists
                 for student in students_to_remove:
                     student_key = client.key(USERS, student)
                     result = client.get(student_key)
-                    # print('RESULTS: ', result)
 
                     if results:
                         remove_students.append(student)
                     else:
                         return ERROR_INVALID_ENROLLMENT, 409
-
-                    # print('Uh-oh 8')
 
                  # Drop students
                 for student in remove_students:
