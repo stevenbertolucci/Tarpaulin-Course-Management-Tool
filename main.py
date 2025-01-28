@@ -15,7 +15,7 @@ from six.moves.urllib.request import urlopen
 from jose import jwt
 from authlib.integrations.flask_client import OAuth
 
-AVATAR_BUCKET='project6-tarpaulin-avatars'
+AVATAR_BUCKET='<bucket_name_goes_here>'
 
 app = Flask(__name__)
 app.secret_key = 'SECRET_KEY'
@@ -30,9 +30,9 @@ COURSES = "courses"
 STUDENTS = "students"
 
 # Update the values of the following 3 variables
-CLIENT_ID = '3sZ0EYeu3CIq98xgY8WbetVlnUL4iAfk'
-CLIENT_SECRET = 'cq3KOI7tYkm25C3s6p3gLfobv6syXYoQqU7ZaeNLVETwjBjpO9HruLOrEDm02lCh'
-DOMAIN = 'dev-x1ennj17g3yv8mg0.us.auth0.com'
+CLIENT_ID = '<client_id_goes_here>'
+CLIENT_SECRET = '<client_secret_goes_here>'
+DOMAIN = '<domain_goes_here>'
 
 ALGORITHMS = ["RS256"]
 
